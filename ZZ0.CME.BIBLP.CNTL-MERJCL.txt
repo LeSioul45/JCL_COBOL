@@ -1,0 +1,57 @@
+//GJ4893QS JOB GAN,'MON',CLASS=S,MSGCLASS=X,TIME=1440,NOTIFY=GJ4893
+//*********************************************************************
+//** PURGE RECHERCHE CONTRATS SUR P{RIM}TRE PRODUIT SANS SINISTRE
+//*  DELETE DU FICHIER RESULTAT
+//*-----------------------------
+//DELETE1 EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+ DELETE (ZZ0.XXX.BIBLP.OU4893.LQ0.PURGECM)
+ SET MAXCC=0
+//*-------------------------------------------------------------------
+//REQUES01  EXEC PGM=IKJEFT01,DYNAMNBR=20
+//*
+//SYSOUT    DD   SYSOUT=*
+//SYSPRINT  DD   SYSOUT=*
+//SYSPUNCH  DD   SYSOUT=*
+//SYSREC00  DD   DSN=ZZ0.XXX.BIBLP.OU4893.LQ0.PURGECM,
+//       UNIT=,DISP=(,KEEP),
+//       SPACE=(CYL,(14,20))
+//SYSTSPRT DD   SYSOUT=*
+//SYSTSIN  DD   *
+DSN SYSTEM(DAQ1)
+RUN PROGRAM(DSNTIAUL)            -
+    PLAN(DSNTIAUL)               -
+    PARMS('SQL')
+/*
+//SYSIN    DD   *
+SELECT DISTINCT
+       A.CICDB, A.CAPE, DIGITS(A.NOCDB), DIGITS(A.NPCDV), A.CDPO
+     , B.CICD, B.DECDM,                 D.CCGT1, D.CDGT
+FROM UTDBLQ0.TPMW0200 A, UTDBLQ0.TPMW1500 B, UTDBLQ0.TPMW6800 D
+   WHERE A.CICDB = B.CICDB
+     AND A.CAPE  = B.CAPE
+     AND A.NOCDB = B.NOCDB
+     AND A.CICDB = D.CICDB
+     AND A.CAPE  = D.CAPE
+     AND A.NOCDB = D.NOCDB
+     AND A.NPCDV = B.NOCDV
+     AND B.CICD  IN ('RM','RE','SE')
+     AND B.DECDM < CURRENT DATE - 5 YEARS
+     AND A.CDPO IN ('ACTIV2',
+       'BGAVP1',
+       'INDAC1',
+       'SANTE1',
+       'SANTE2',
+       'SANTE9')
+     AND NOT EXISTS (SELECT C.CAPE
+                              FROM UTDBLQ0.TSME1E00 C
+     WHERE A.CICDB = C.CICDB
+      AND A.CAPE = C.CAPE
+      AND A.NOCDB = C.NOCDB)
+       GROUP BY
+       A.CICDB, A.CAPE, DIGITS(A.NOCDB), DIGITS(A.NPCDV), A.CDPO
+     , B.CICD, B.DECDM,                 D.CCGT1, D.CDGT
+     ;
+//*
+//*

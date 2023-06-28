@@ -1,0 +1,115 @@
+Les adaptations à faire : 
+
+NU1128 -> à remplacer par le user de la personne en charge de la soumission
+NQ0.SIG.TEMPS.EPZN - > fichier EPZN de travail -> NQ0 propre à GCM Sigma-Pré-Prod - à remplacer pour chaque CR
+                                               -> TEMPS fichier temporaire qui sera purgé automatiquement dans 30 jours (je crois).
+                                               -> il contiendra les données du fichier EPZN issu de la variante mais sans la ligne titre.
+                                               -> permet de ne pas travailler sur le fichier à génération -> évite toute altération.
+NQ0.SIG.OEXTS.EPZN.G0004V00 -> fichier EPZN issu de la variante Sigma. Fichier à génération -> prendre la dernière génération issue du dernier passage de la variante Sigma.
+SGAQ : DB2 SSID -> pour GCM SGAQ pour Pré-Prod  mais DB2P pour GCM-Prod -> à adapter pour chaque CR
+SET CURRENT SQLID = 'UTDBNQ0M pour GCM-Pré-Prod  et UTDBNP0M pour GCM-Prod -> à adapter pour chaque CR. 
+
+
+Le JCL est le suivant : 
+
+//NU1128RG  JOB ,BFA,CLASS=D,MSGCLASS=X,NOTIFY=NU1128,TIME=10
+//*-------------------------------------------------------------------
+//*- RGPD : METTRE LE FICHIER EPZN DANS UNE TABLE DE TRAVAIL         -
+//*- DELETE : SUPPRESSION DU FICHIER DE TRAVAIL S'IL EXISTE          -
+//*- ETAPE1 : CREATION D'UN FICHIER EPZN DE TRAVAIL                  -
+//*-          TRI EN ENTREE -> EPZN ISSU DE LA VARIANTE              -
+//*-              EN SORTIE -> EPZN DE TRAVAIL SANS LIGNE TITRE      -
+//*-                           FICHIER TEMPORAIRE (TEMPS)            -
+//*- ETAPE2 : CR{ATION DE LA TABLE T_EPZN (TABLE DB2)                -
+//*-          ELLE NE CONTIENT QUE LES RUBRIQUES UTILES DU EPZN      -
+//*- ETAPE3 : CHARGEMENT DU FICHIER EPZN DANS LA TABLE T_EPZN        -
+//*- ETAPE4 : QUELQUES SELECT DE CONTROLE                            -
+//*-        : A) COUNT(*) -> NBRE OCCURRENCES DANS LA TABLE          -
+//*-        : B) SELECT   -> DES 10 PREMIERES OCCURRENCES            -
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+  DELETE   NQ0.SIG.TEMPS.EPZN PURGE
+  SET MAXCC EQ 0
+/*
+//*                      --------------------
+//ETAPE1   EXEC PGM=SORT
+//SYSOUT   DD SYSOUT=*
+//SORTIN   DD DSN=NQ0.SIG.OEXTS.EPZN.G0004V00,DISP=SHR
+//SORTOUT  DD DSN=NQ0.SIG.TEMPS.EPZN,UNIT=SYSDA,
+//            SPACE=(CYL,(50,1),RLSE,,ROUND),
+//            DCB=(RECFM=FB,LRECL=83,BLKSIZE=27971),
+//            DISP=(NEW,KEEP)
+//SYSIN    DD *
+ SORT FIELDS=(9,21,A),FORMAT=BI
+ INCLUDE COND=(1,7,CH,EQ,C'CONTRAT')
+ END
+/*
+//*                      --------------------
+//ETAPE2   EXEC PGM=IKJEFT01
+//SYSTSPRT DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//SYSTSIN   DD *
+DSN SYSTEM(SGAQ)
+    -TERM UTILITY(LOA.LMJ1)
+    RUN   PROGRAM(DSNTEP2)
+END
+//SYSIN     DD *
+SET CURRENT SQLID = 'UTDBNQ0M'; COMMIT;
+---
+DROP TABLE T_EPZN;
+COMMIT;
+---
+CREATE TABLE T_EPZN  (CICDB  CHAR(1),
+                      CAPE   CHAR(8),
+                      NOCDB  INTEGER,
+                      CDPO   CHAR(6),
+                      CAPEG  CHAR(8),
+                      DTREF  DATE );
+--
+CREATE UNIQUE INDEX I_EPZN
+ON     T_EPZN (CICDB, CAPE, NOCDB)
+DEFINE NO;
+---
+COMMIT;
+---
+//*                      --------------------
+//ETAPE3   EXEC PGM=DSNUTILB,PARM='SGAQ,LOA.LMJ1'
+//SYSPRINT DD SYSOUT=*
+//SYSOUT   DD SYSOUT=*
+//SYSUT1   DD DSN=&&SYSUT1,
+//  UNIT=SYSDA,DISP=(NEW,DELETE),SPACE=(CYL,(50,50))
+//SORTOUT  DD DSN=&&SORTOUT,
+//  UNIT=SYSDA,DISP=(NEW,DELETE),SPACE=(CYL,(50,50))
+//SYSREC   DD DSN=NQ0.SIG.TEMPS.EPZN,DISP=SHR
+//SYSIN    DD *
+LOAD DATA INDDN SYSREC REPLACE
+ INTO TABLE UTDBNQ0M.T_EPZN
+  (CICDB POSITION(9:9)   CHAR(1),
+   CAPE  POSITION(10:17) CHAR(8),
+   NOCDB POSITION(18:21) INTEGER EXTERNAL,
+   CDPO  POSITION(49:54) CHAR(6),
+   CAPEG POSITION(65:72) CHAR(8),
+   DTREF POSITION(74:83) DATE EXTERNAL (DATE_E) )
+/*
+//*                      --------------------
+//ETAPE4   EXEC PGM=IKJEFT01
+//SYSTSPRT DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//SYSTSIN   DD *
+DSN SYSTEM(SGAQ)
+    RUN   PROGRAM(DSNTEP2)
+END
+//*
+//SYSIN     DD *
+--
+SET CURRENT SQLID = 'UTDBNQ0M'; COMMIT;
+------------------------------------------
+---    VIDAGE DE LA TABLE POUR CONTROLE
+------------------------------------------
+SELECT COUNT(*) FROM T_EPZN ;
+---
+SELECT *
+FROM   T_EPZN
+FETCH  FIRST 10 ROWS ONLY;
